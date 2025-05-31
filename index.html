@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <meta charset="utf-8" />
-<title>Atlas Mapper</title>
+<title>Atlas Mapper 4.3</title>
 <style>
   :root {
     --bg: #1e1e1e;
@@ -21,7 +21,7 @@
     color: var(--fg);
   }
   #sidebar {
-    width: 280px;
+    width: 300px;
     display: flex;
     flex-direction: column;
     border-right: 1px solid var(--border);
@@ -113,6 +113,13 @@
       Máscara</label
     >
     <label
+      ><input
+        type="file"
+        id="jsonFile"
+        accept=".json,application/json"
+      />Carregar Mapeamento</label
+    >
+    <label
       ><input type="file" id="atlasFile" accept="image/*" />Carregar
       Atlas</label
     >
@@ -139,22 +146,38 @@
     boxes = [],
     current = -1,
     scale = 1;
+  let jsonBoxes = null; // se carregado via JSON
   const BORDER = new Set(["0,255,156", "255,193,0", "251,255,0", "255,0,212"]);
   const thumbs = $("#thumbs"),
     status = $("#status");
 
+  // === util ===
   const loadImage = (f) =>
     new Promise((r) => {
       const i = new Image();
       i.src = URL.createObjectURL(f);
       i.onload = () => r(i);
     });
+  const readFile = (f) =>
+    new Promise((r) => {
+      const fr = new FileReader();
+      fr.onload = (e) => r(e.target.result);
+      fr.readAsText(f);
+    });
   const inBounds = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
-  const isBorder = (x, y) => {
+  // ±10 de tolerância para amarelo puro (251,255,0)
+  function isBorder(x, y) {
     const i = (y * W + x) << 2,
-      d = maskData.data;
-    return BORDER.has(`${d[i]},${d[i + 1]},${d[i + 2]}`);
-  };
+      r = maskData.data[i],
+      g = maskData.data[i + 1],
+      b = maskData.data[i + 2];
+
+    // faixa amarela com tolerância
+    const isYellow = r >= 241 && r <= 255 && g >= 241 && g <= 255 && b <= 50;
+
+    return isYellow || BORDER.has(`${r},${g},${b}`);
+  }
+
   function clearAll() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cvs.width, cvs.height);
@@ -195,6 +218,7 @@
       redraw();
     }
   }
+
   function buildThumbs() {
     thumbs.innerHTML = "";
     boxes.forEach((b, i) => {
@@ -222,26 +246,21 @@
     updateStatus();
   }
 
-  // Flood-fill interior → retângulo
-  // Flood-fill interior → retângulo fechado.
-  // Descarta regiões que tocam a borda da imagem.
+  // === detecção via máscara ===
   function detectRects() {
     const visited = new Uint8Array(W * H),
       res = [],
       stack = [];
-
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++) {
         const id = y * W + x;
         if (visited[id] || isBorder(x, y)) continue;
-
         let minX = x,
           maxX = x,
           minY = y,
           maxY = y;
         stack.push([x, y]);
         visited[id] = 1;
-
         while (stack.length) {
           const [px, py] = stack.pop();
           for (const [nx, ny] of [
@@ -261,66 +280,42 @@
             if (ny > maxY) maxY = ny;
           }
         }
-
-        // Se encostar em qualquer extremidade → é o fundo, ignora
         if (minX === 0 || minY === 0 || maxX === W - 1 || maxY === H - 1)
-          continue;
-
-        // Expande 1 px para incluir a borda colorida
+          continue; // ignora fundo
         const x0 = minX - 1,
-          y0 = minY - 1;
-        res.push({
-          x: x0,
-          y: y0,
-          w: maxX - minX + 3,
-          h: maxY - minY + 3,
-          name: "",
-        });
+          y0 = minY - 1,
+          w = maxX - minX + 3,
+          h = maxY - minY + 3;
+        res.push({ x: x0, y: y0, w, h, name: "" });
       }
-
     return res;
   }
 
-  // Canvas click → seleção de box
-  cvs.onclick = (e) => {
-    if (!atlasImg) return;
-    const rect = cvs.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / scale),
-      y = Math.floor((e.clientY - rect.top) / scale);
-    current = boxes.findIndex(
-      (b) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h
-    );
-    if (current > -1) {
-      highlightThumb();
-      redraw();
-      scrollIntoView(thumbs.children[current]);
-    }
-  };
-
-  // ==== load / init ====
-  async function loadMask(e) {
-    if (!e.target.files[0]) return;
-    maskImg = await loadImage(e.target.files[0]);
-    init();
-  }
-  async function loadAtlas(e) {
-    if (!e.target.files[0]) return;
-    atlasImg = await loadImage(e.target.files[0]);
-    init();
-  }
+  // === init de acordo com modo ===
   function init() {
-    if (!maskImg || !atlasImg) return;
-    if (
-      maskImg.width !== atlasImg.width ||
-      maskImg.height !== atlasImg.height
-    ) {
-      alert("Máscara e atlas devem ter mesma resolução");
-      return;
-    }
+    if (!atlasImg) return;
     W = atlasImg.width;
     H = atlasImg.height;
     cvs.width = W;
     cvs.height = H;
+
+    if (jsonBoxes) {
+      boxes = jsonBoxes;
+      current = -1;
+      buildThumbs();
+      redraw();
+      return;
+    }
+
+    if (!maskImg) {
+      alert("Carregue máscara ou JSON.");
+      return;
+    }
+    if (maskImg.width !== W || maskImg.height !== H) {
+      alert("Máscara e atlas devem ter mesma resolução");
+      return;
+    }
+
     const off = document.createElement("canvas");
     off.width = W;
     off.height = H;
@@ -332,14 +327,69 @@
     redraw();
   }
 
-  // ==== UI bindings ====
-  $("#maskFile").addEventListener("change", loadMask);
-  $("#atlasFile").addEventListener("change", loadAtlas);
+  // === carregamentos ===
+  $("#maskFile").addEventListener("change", async (e) => {
+    maskImg = e.target.files[0] ? await loadImage(e.target.files[0]) : null;
+    jsonBoxes = null;
+    init();
+  });
+  $("#jsonFile").addEventListener("change", async (e) => {
+    if (!e.target.files[0]) return;
+    const txt = await readFile(e.target.files[0]);
+    try {
+      const data = JSON.parse(txt);
+      if (!data.frames) throw 0;
+      jsonBoxes = Object.entries(data.frames).map(([name, obj]) => {
+        const f = obj.frame;
+        return { x: f.x, y: f.y, w: f.w, h: f.h, name };
+      });
+      maskImg = null;
+      current = -1;
+      buildThumbs();
+      redraw();
+      init();
+    } catch {
+      alert("JSON inválido.");
+    }
+  });
+  $("#atlasFile").addEventListener("change", async (e) => {
+    atlasImg = e.target.files[0] ? await loadImage(e.target.files[0]) : null;
+    init();
+  });
+
+  // === canvas click → seleção ===
+  cvs.onclick = (e) => {
+    if (!atlasImg) return;
+    const r = cvs.getBoundingClientRect(),
+      x = Math.floor((e.clientX - r.left) / scale),
+      y = Math.floor((e.clientY - r.top) / scale);
+    current = boxes.findIndex(
+      (b) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h
+    );
+    if (current > -1) {
+      highlightThumb();
+      redraw();
+      scrollIntoView(thumbs.children[current]);
+    }
+  };
+
+  // === export ===
   $("#export").onclick = () => {
+    if (!boxes.length) {
+      alert("Nada para exportar.");
+      return;
+    }
     const out = { frames: {} };
     boxes.forEach((b, i) => {
-      const n = (b.name || String(i + 1).padStart(4, "0")).trim();
-      out.frames[n] = { x: b.x, y: b.y, w: b.w, h: b.h };
+      const name = (b.name || String(i + 1).padStart(4, "0")).trim();
+      out.frames[name] = {
+        frame: { x: b.x, y: b.y, w: b.w, h: b.h },
+        rotated: false,
+        trimmed: false,
+        spriteSourceSize: { x: 0, y: 0, w: b.w, h: b.h },
+        sourceSize: { w: b.w, h: b.h },
+        pivot: { x: 0.5, y: 0.5 },
+      };
     });
     const blob = new Blob([JSON.stringify(out, null, 2)], {
       type: "application/json",
@@ -349,6 +399,8 @@
     a.download = "atlas.json";
     a.click();
   };
+
+  // === outros controles ===
   $("#del").onclick = deleteCurrent;
   $("#zoomIn").onclick = () => {
     scale *= 1.25;
