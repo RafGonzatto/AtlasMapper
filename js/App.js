@@ -2,6 +2,8 @@ import { ProjectState } from "./core/ProjectState.js";
 import { CanvasView } from "./ui/CanvasView.js";
 import { SpriteList } from "./ui/SpriteList.js";
 import { Toolbar } from "./ui/Toolbar.js";
+import { Inspector } from "./ui/Inspector.js";
+import { SettingsPanel } from "./ui/SettingsPanel.js";
 
 class App {
   constructor() {
@@ -18,20 +20,66 @@ class App {
     const thumbsContainer = document.getElementById("thumbs");
     this.spriteList = new SpriteList(thumbsContainer, this.state);
 
-    // Toolbar
+    // Inspector
+    const inspectorContainer = document.getElementById("inspector");
+    this.inspector = new Inspector(inspectorContainer, this.state);
+
+    // Settings
+    const settingsContainer = document.getElementById("panel-settings");
+    this.settingsPanel = new SettingsPanel(settingsContainer, this.state);
+
+    // Toolbar (now handles file inputs and zoom buttons)
+    // Note: Toolbar.js needs to be updated or we just reuse it but some IDs changed or are gone (exportBtn is in settings now)
+    // Let's check Toolbar.js content. It expects exportBtn and deleteBtn.
+    // In new HTML, export is in settings, delete is in inspector (and maybe toolbar-mini?).
+    // Actually, I removed the main 'export' button from the top toolbar in HTML.
+    // I should probably refactor Toolbar.js to be "FileLoader.js" or similar, or just adapt it.
+    // For now, let's adapt the elements passed to it.
+
     const toolbarElements = {
       maskInput: document.getElementById("maskFile"),
       jsonInput: document.getElementById("jsonFile"),
       atlasInput: document.getElementById("atlasFile"),
-      exportBtn: document.getElementById("export"),
-      deleteBtn: document.getElementById("del"),
+      // exportBtn: document.getElementById('export'), // Moved to SettingsPanel
+      // deleteBtn: document.getElementById('del'), // Moved to Inspector
       zoomInBtn: document.getElementById("zoomIn"),
       zoomOutBtn: document.getElementById("zoomOut"),
     };
+
+    // We need to patch Toolbar.js because it expects exportBtn and deleteBtn to exist.
+    // Or I can just create a dummy element or update Toolbar.js.
+    // Updating Toolbar.js is cleaner.
     this.toolbar = new Toolbar(toolbarElements, this.state);
+
+    // Search
+    const searchInput = document.getElementById("search-sprites");
+    searchInput.addEventListener("input", (e) => {
+      this.spriteList.setFilter(e.target.value);
+    });
+
+    // Tabs
+    this.setupTabs();
 
     // Drag and Drop Support
     this.setupDragDrop();
+  }
+
+  setupTabs() {
+    const tabs = document.querySelectorAll(".tab-btn");
+    const panels = document.querySelectorAll(".panel");
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        // Deactivate all
+        tabs.forEach((t) => t.classList.remove("active"));
+        panels.forEach((p) => p.classList.remove("active"));
+
+        // Activate clicked
+        tab.classList.add("active");
+        const target = tab.dataset.tab;
+        document.getElementById(`panel-${target}`).classList.add("active");
+      });
+    });
   }
 
   setupDragDrop() {

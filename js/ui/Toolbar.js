@@ -18,47 +18,54 @@ export class Toolbar {
   }
 
   bindEvents() {
-    const {
-      maskInput,
-      jsonInput,
-      atlasInput,
-      exportBtn,
-      deleteBtn,
-      zoomInBtn,
-      zoomOutBtn,
-    } = this.elements;
+    const { maskInput, jsonInput, atlasInput, zoomInBtn, zoomOutBtn } =
+      this.elements;
 
     // File Inputs
-    maskInput.addEventListener("change", (e) =>
-      this.handleMaskLoad(e.target.files[0])
-    );
-    jsonInput.addEventListener("change", (e) =>
-      this.handleJsonLoad(e.target.files[0])
-    );
-    atlasInput.addEventListener("change", (e) =>
-      this.handleAtlasLoad(e.target.files[0])
-    );
+    if (maskInput)
+      maskInput.addEventListener("change", (e) =>
+        this.handleMaskLoad(e.target.files[0])
+      );
+    if (jsonInput)
+      jsonInput.addEventListener("change", (e) =>
+        this.handleJsonLoad(e.target.files[0])
+      );
+    if (atlasInput)
+      atlasInput.addEventListener("change", (e) =>
+        this.handleAtlasLoad(e.target.files[0])
+      );
 
     // Buttons
-    exportBtn.addEventListener("click", () => this.exportData());
-    deleteBtn.addEventListener("click", () =>
-      this.state.deleteRect(this.state.selectedIndex)
-    );
-
-    zoomInBtn.addEventListener("click", () =>
-      this.state.setScale(this.state.scale * 1.25)
-    );
-    zoomOutBtn.addEventListener("click", () =>
-      this.state.setScale(Math.max(0.25, this.state.scale / 1.25))
-    );
+    if (zoomInBtn)
+      zoomInBtn.addEventListener("click", () =>
+        this.state.setScale(this.state.scale * 1.25)
+      );
+    if (zoomOutBtn)
+      zoomOutBtn.addEventListener("click", () =>
+        this.state.setScale(Math.max(0.25, this.state.scale / 1.25))
+      );
 
     // Keyboard shortcuts
     window.addEventListener("keydown", (e) => {
+      // Undo/Redo
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          this.state.redo();
+        } else {
+          this.state.undo();
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        this.state.redo();
+      }
+
       if (["Delete", "Backspace"].includes(e.key)) {
-        // Only if not typing in an input (handled in SpriteList but good to be safe)
+        // Only if not typing in an input
         if (document.activeElement.tagName !== "INPUT") {
           e.preventDefault();
-          this.state.deleteRect(this.state.selectedIndex);
+          this.state.deleteSelected();
         }
       }
     });
@@ -100,7 +107,14 @@ export class Toolbar {
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, img.width, img.height);
 
-      const rects = this.detector.detect(imageData);
+      // Ask user about border inclusion (simple confirm for now, or we can add a checkbox in UI)
+      // Since we can't easily add a checkbox in the file dialog flow, let's check a UI element
+      // or just use confirm() as a quick solution, but better to have a persistent setting.
+      // Let's look for a checkbox in the DOM. If not found, default to false.
+      const includeBorder =
+        document.getElementById("chk-include-border")?.checked || false;
+
+      const rects = this.detector.detect(imageData, { includeBorder });
       this.state.setMask(img, rects);
     } catch (err) {
       console.error(err);
@@ -156,7 +170,7 @@ export class Toolbar {
 
   updateStatus() {
     const rect = this.state.currentRect;
-    const statusEl = document.getElementById("status");
+    const statusEl = document.getElementById("status-bar");
     if (statusEl) {
       statusEl.textContent = rect
         ? `${rect.name || "sprite"} — x:${rect.x}, y:${rect.y}, w:${

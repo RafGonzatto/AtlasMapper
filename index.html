@@ -8,51 +8,65 @@
   </head>
   <body>
     <div id="sidebar">
-      <div id="tools">
-        <label class="btn" title="Load Atlas Image">
-          <input type="file" id="atlasFile" accept="image/*" />
-          Load Atlas
-        </label>
-        <label class="btn" title="Load Mask Image (Grid)">
-          <input type="file" id="maskFile" accept="image/*" />
-          Load Mask
-        </label>
-        <label class="btn" title="Load Existing JSON">
-          <input type="file" id="jsonFile" accept=".json" />
-          Load JSON
-        </label>
-        <button id="export" title="Export to JSON">Export</button>
-
-        <button id="zoomIn" title="Zoom In">+</button>
-        <button id="zoomOut" title="Zoom Out">−</button>
-        <button
-          id="del"
-          title="Delete Selected Sprite"
-          style="grid-column: span 2; background: #522; border-color: #633"
-        >
-          Delete Selected
-        </button>
+      <div id="sidebar-header">
+        <button class="tab-btn active" data-tab="sprites">Sprites</button>
+        <button class="tab-btn" data-tab="settings">Settings</button>
       </div>
 
-      <div id="thumbs">
-        <!-- Thumbnails will be injected here -->
-        <div
-          style="
-            padding: 20px;
-            text-align: center;
-            color: #666;
-            grid-column: 1/-1;
-          "
-        >
-          Load an Atlas image to start.
+      <div id="sidebar-content">
+        <!-- Sprites Panel -->
+        <div id="panel-sprites" class="panel active">
+          <div class="toolbar-mini">
+            <label class="btn-icon" title="Load Atlas"
+              ><input type="file" id="atlasFile" accept="image/*" />📂
+              Atlas</label
+            >
+            <label class="btn-icon" title="Load Mask"
+              ><input type="file" id="maskFile" accept="image/*" />🎭
+              Mask</label
+            >
+            <label class="btn-icon" title="Load JSON"
+              ><input type="file" id="jsonFile" accept=".json" />📄 JSON</label
+            >
+          </div>
+          <div
+            class="toolbar-options"
+            style="padding: 0 5px 10px 5px; font-size: 0.8rem; color: #888"
+          >
+            <label
+              ><input type="checkbox" id="chk-include-border" /> Include Mask
+              Border</label
+            >
+          </div>
+          <input
+            type="text"
+            id="search-sprites"
+            placeholder="Filter sprites..."
+            class="search-box"
+          />
+          <button id="btn-create-group" class="btn-full">+ Create Group</button>
+          <div id="thumbs">
+            <div class="empty-state">Load an Atlas image to start.</div>
+          </div>
+          <div id="inspector"></div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div id="panel-settings" class="panel">
+          <!-- Injected by SettingsPanel.js -->
         </div>
       </div>
-
-      <div id="status"></div>
     </div>
 
-    <div id="wrap">
-      <canvas id="atlas"></canvas>
+    <div id="main-area">
+      <div id="canvas-toolbar">
+        <button id="zoomIn" title="Zoom In">+</button>
+        <button id="zoomOut" title="Zoom Out">−</button>
+        <span id="status-bar"></span>
+      </div>
+      <div id="wrap">
+        <canvas id="atlas"></canvas>
+      </div>
     </div>
 
     <script type="module" src="js/App.js"></script>
