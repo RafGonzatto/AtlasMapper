@@ -1,427 +1,60 @@
 <!DOCTYPE html>
-<meta charset="utf-8" />
-<title>Atlas Mapper 4.3</title>
-<style>
-  :root {
-    --bg: #1e1e1e;
-    --panel: #242424;
-    --fg: #e0e0e0;
-    --accent: #4eaaff;
-    --border: #444;
-  }
-  * {
-    box-sizing: border-box;
-    font-family: system-ui, sans-serif;
-  }
-  body {
-    margin: 0;
-    height: 100vh;
-    display: flex;
-    background: var(--bg);
-    color: var(--fg);
-  }
-  #sidebar {
-    width: 300px;
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid var(--border);
-    background: var(--panel);
-  }
-  #tools {
-    display: grid;
-    gap: 8px;
-    padding: 10px;
-    grid-template-columns: 1fr 1fr;
-  }
-  button,
-  label {
-    padding: 8px;
-    border: 1px solid var(--border);
-    background: #333;
-    color: var(--fg);
-    cursor: pointer;
-    text-align: center;
-    border-radius: 4px;
-    transition: background 0.2s;
-  }
-  button:hover,
-  label:hover {
-    background: #3f3f3f;
-  }
-  input[type="file"] {
-    display: none;
-  }
-  #thumbs {
-    flex: 1;
-    overflow: auto;
-    padding: 8px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  .thumb {
-    background: #2b2b2b;
-    border: 2px solid transparent;
-    padding: 4px;
-    border-radius: 4px;
-    width: 80px;
-    transition: border 0.1s;
-  }
-  .thumb.selected {
-    border-color: var(--accent);
-  }
-  .thumb canvas {
-    width: 72px;
-    height: 72px;
-    border: 1px solid var(--border);
-    image-rendering: pixelated;
-    border-radius: 2px;
-  }
-  .thumb input {
-    width: 100%;
-    margin-top: 2px;
-    background: #1a1a1a;
-    border: none;
-    color: var(--fg);
-    text-align: center;
-    border-radius: 2px;
-  }
-  #status {
-    padding: 6px 10px;
-    border-top: 1px solid var(--border);
-    font-size: 0.85rem;
-    min-height: 22px;
-  }
-  #wrap {
-    flex: 1;
-    overflow: auto;
-    background: #111;
-    display: flex;
-    align-items: start;
-    justify-content: start;
-  }
-  #atlas {
-    image-rendering: pixelated;
-    cursor: crosshair;
-  }
-</style>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Atlas Mapper 5.0</title>
+    <link rel="stylesheet" href="css/main.css" />
+  </head>
+  <body>
+    <div id="sidebar">
+      <div id="tools">
+        <label class="btn" title="Load Atlas Image">
+          <input type="file" id="atlasFile" accept="image/*" />
+          Load Atlas
+        </label>
+        <label class="btn" title="Load Mask Image (Grid)">
+          <input type="file" id="maskFile" accept="image/*" />
+          Load Mask
+        </label>
+        <label class="btn" title="Load Existing JSON">
+          <input type="file" id="jsonFile" accept=".json" />
+          Load JSON
+        </label>
+        <button id="export" title="Export to JSON">Export</button>
 
-<div id="sidebar">
-  <div id="tools">
-    <label
-      ><input type="file" id="maskFile" accept="image/*" />Carregar
-      Máscara</label
-    >
-    <label
-      ><input
-        type="file"
-        id="jsonFile"
-        accept=".json,application/json"
-      />Carregar Mapeamento</label
-    >
-    <label
-      ><input type="file" id="atlasFile" accept="image/*" />Carregar
-      Atlas</label
-    >
-    <button id="export">Exportar</button>
-    <button id="del">Excluir</button>
-    <button id="zoomIn">+</button>
-    <button id="zoomOut">−</button>
-  </div>
-  <div id="thumbs"></div>
-  <div id="status"></div>
-</div>
+        <button id="zoomIn" title="Zoom In">+</button>
+        <button id="zoomOut" title="Zoom Out">−</button>
+        <button
+          id="del"
+          title="Delete Selected Sprite"
+          style="grid-column: span 2; background: #522; border-color: #633"
+        >
+          Delete Selected
+        </button>
+      </div>
 
-<div id="wrap"><canvas id="atlas"></canvas></div>
+      <div id="thumbs">
+        <!-- Thumbnails will be injected here -->
+        <div
+          style="
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            grid-column: 1/-1;
+          "
+        >
+          Load an Atlas image to start.
+        </div>
+      </div>
 
-<script>
-  const $ = (s) => document.querySelector(s),
-    cvs = $("#atlas"),
-    ctx = cvs.getContext("2d");
-  let maskImg,
-    atlasImg,
-    maskData,
-    W,
-    H,
-    boxes = [],
-    current = -1,
-    scale = 1;
-  let jsonBoxes = null; // se carregado via JSON
-  const BORDER = new Set(["0,255,156", "255,193,0", "251,255,0", "255,0,212"]);
-  const thumbs = $("#thumbs"),
-    status = $("#status");
+      <div id="status"></div>
+    </div>
 
-  // === util ===
-  const loadImage = (f) =>
-    new Promise((r) => {
-      const i = new Image();
-      i.src = URL.createObjectURL(f);
-      i.onload = () => r(i);
-    });
-  const readFile = (f) =>
-    new Promise((r) => {
-      const fr = new FileReader();
-      fr.onload = (e) => r(e.target.result);
-      fr.readAsText(f);
-    });
-  const inBounds = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
-  // ±10 de tolerância para amarelo puro (251,255,0)
-  function isBorder(x, y) {
-    const i = (y * W + x) << 2,
-      r = maskData.data[i],
-      g = maskData.data[i + 1],
-      b = maskData.data[i + 2];
+    <div id="wrap">
+      <canvas id="atlas"></canvas>
+    </div>
 
-    // faixa amarela com tolerância
-    const isYellow = r >= 241 && r <= 255 && g >= 241 && g <= 255 && b <= 50;
-
-    return isYellow || BORDER.has(`${r},${g},${b}`);
-  }
-
-  function clearAll() {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, cvs.width, cvs.height);
-  }
-  function redraw() {
-    clearAll();
-    if (!atlasImg) return;
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
-    ctx.drawImage(atlasImg, 0, 0);
-    boxes.forEach((b, i) => {
-      ctx.lineWidth = (i === current ? 2 : 1) / scale;
-      ctx.strokeStyle = i === current ? "#ff3e3e" : "#00ff7f";
-      ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w, b.h);
-    });
-  }
-  function updateStatus() {
-    status.textContent =
-      current < 0
-        ? ""
-        : `${boxes[current].name || "sprite"} — x:${boxes[current].x}, y:${
-            boxes[current].y
-          }, w:${boxes[current].w}, h:${boxes[current].h}`;
-  }
-  function highlightThumb() {
-    [...thumbs.children].forEach((d, i) =>
-      d.classList.toggle("selected", i === current)
-    );
-    updateStatus();
-  }
-  function scrollIntoView(el) {
-    el.scrollIntoView({ block: "nearest" });
-  }
-  function deleteCurrent() {
-    if (current > -1) {
-      boxes.splice(current, 1);
-      current = -1;
-      buildThumbs();
-      redraw();
-    }
-  }
-
-  function buildThumbs() {
-    thumbs.innerHTML = "";
-    boxes.forEach((b, i) => {
-      const wrap = document.createElement("div");
-      wrap.className = "thumb";
-      if (i === current) wrap.classList.add("selected");
-      const mini = document.createElement("canvas");
-      mini.width = b.w;
-      mini.height = b.h;
-      mini
-        .getContext("2d")
-        .drawImage(atlasImg, b.x, b.y, b.w, b.h, 0, 0, b.w, b.h);
-      mini.onclick = () => {
-        current = i;
-        highlightThumb();
-        redraw();
-        scrollIntoView(wrap);
-      };
-      const inp = document.createElement("input");
-      inp.value = b.name || String(i + 1).padStart(4, "0");
-      inp.oninput = (e) => (b.name = e.target.value);
-      wrap.append(mini, inp);
-      thumbs.appendChild(wrap);
-    });
-    updateStatus();
-  }
-
-  // === detecção via máscara ===
-  function detectRects() {
-    const visited = new Uint8Array(W * H),
-      res = [],
-      stack = [];
-    for (let y = 0; y < H; y++)
-      for (let x = 0; x < W; x++) {
-        const id = y * W + x;
-        if (visited[id] || isBorder(x, y)) continue;
-        let minX = x,
-          maxX = x,
-          minY = y,
-          maxY = y;
-        stack.push([x, y]);
-        visited[id] = 1;
-        while (stack.length) {
-          const [px, py] = stack.pop();
-          for (const [nx, ny] of [
-            [px + 1, py],
-            [px - 1, py],
-            [px, py + 1],
-            [px, py - 1],
-          ]) {
-            if (!inBounds(nx, ny)) continue;
-            const nid = ny * W + nx;
-            if (visited[nid] || isBorder(nx, ny)) continue;
-            visited[nid] = 1;
-            stack.push([nx, ny]);
-            if (nx < minX) minX = nx;
-            if (nx > maxX) maxX = nx;
-            if (ny < minY) minY = ny;
-            if (ny > maxY) maxY = ny;
-          }
-        }
-        if (minX === 0 || minY === 0 || maxX === W - 1 || maxY === H - 1)
-          continue; // ignora fundo
-        const x0 = minX - 1,
-          y0 = minY - 1,
-          w = maxX - minX + 3,
-          h = maxY - minY + 3;
-        res.push({ x: x0, y: y0, w, h, name: "" });
-      }
-    return res;
-  }
-
-  // === init de acordo com modo ===
-  function init() {
-    if (!atlasImg) return;
-    W = atlasImg.width;
-    H = atlasImg.height;
-    cvs.width = W;
-    cvs.height = H;
-
-    if (jsonBoxes) {
-      boxes = jsonBoxes;
-      current = -1;
-      buildThumbs();
-      redraw();
-      return;
-    }
-
-    if (!maskImg) {
-      alert("Carregue máscara ou JSON.");
-      return;
-    }
-    if (maskImg.width !== W || maskImg.height !== H) {
-      alert("Máscara e atlas devem ter mesma resolução");
-      return;
-    }
-
-    const off = document.createElement("canvas");
-    off.width = W;
-    off.height = H;
-    off.getContext("2d").drawImage(maskImg, 0, 0);
-    maskData = off.getContext("2d").getImageData(0, 0, W, H);
-    boxes = detectRects();
-    current = -1;
-    buildThumbs();
-    redraw();
-  }
-
-  // === carregamentos ===
-  $("#maskFile").addEventListener("change", async (e) => {
-    maskImg = e.target.files[0] ? await loadImage(e.target.files[0]) : null;
-    jsonBoxes = null;
-    init();
-  });
-  $("#jsonFile").addEventListener("change", async (e) => {
-    if (!e.target.files[0]) return;
-    const txt = await readFile(e.target.files[0]);
-    try {
-      const data = JSON.parse(txt);
-      if (!data.frames) throw 0;
-      jsonBoxes = Object.entries(data.frames).map(([name, obj]) => {
-        const f = obj.frame;
-        return { x: f.x, y: f.y, w: f.w, h: f.h, name };
-      });
-      maskImg = null;
-      current = -1;
-      buildThumbs();
-      redraw();
-      init();
-    } catch {
-      alert("JSON inválido.");
-    }
-  });
-  $("#atlasFile").addEventListener("change", async (e) => {
-    atlasImg = e.target.files[0] ? await loadImage(e.target.files[0]) : null;
-    init();
-  });
-
-  // === canvas click → seleção ===
-  cvs.onclick = (e) => {
-    if (!atlasImg) return;
-    const r = cvs.getBoundingClientRect(),
-      x = Math.floor((e.clientX - r.left) / scale),
-      y = Math.floor((e.clientY - r.top) / scale);
-    current = boxes.findIndex(
-      (b) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h
-    );
-    if (current > -1) {
-      highlightThumb();
-      redraw();
-      scrollIntoView(thumbs.children[current]);
-    }
-  };
-
-  // === export ===
-  $("#export").onclick = () => {
-    if (!boxes.length) {
-      alert("Nada para exportar.");
-      return;
-    }
-    const out = { frames: {} };
-    boxes.forEach((b, i) => {
-      const name = (b.name || String(i + 1).padStart(4, "0")).trim();
-      out.frames[name] = {
-        frame: { x: b.x, y: b.y, w: b.w, h: b.h },
-        rotated: false,
-        trimmed: false,
-        spriteSourceSize: { x: 0, y: 0, w: b.w, h: b.h },
-        sourceSize: { w: b.w, h: b.h },
-        pivot: { x: 0.5, y: 0.5 },
-      };
-    });
-    const blob = new Blob([JSON.stringify(out, null, 2)], {
-      type: "application/json",
-    });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "atlas.json";
-    a.click();
-  };
-
-  // === outros controles ===
-  $("#del").onclick = deleteCurrent;
-  $("#zoomIn").onclick = () => {
-    scale *= 1.25;
-    redraw();
-  };
-  $("#zoomOut").onclick = () => {
-    scale = Math.max(0.25, scale / 1.25);
-    redraw();
-  };
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Delete" || e.key === "Backspace") {
-      e.preventDefault();
-      deleteCurrent();
-    }
-    if ((e.key === "+" || e.key === "=") && e.ctrlKey) {
-      scale *= 1.25;
-      redraw();
-    }
-    if (e.key === "-" && e.ctrlKey) {
-      scale = Math.max(0.25, scale / 1.25);
-      redraw();
-    }
-  });
-</script>
+    <script type="module" src="js/App.js"></script>
+  </body>
+</html>
