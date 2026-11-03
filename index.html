@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -7,6 +7,28 @@
     <link rel="stylesheet" href="css/main.css" />
   </head>
   <body>
+    <div id="workspace-bar">
+      <div id="workspace-tabs" aria-label="Workspaces"></div>
+      <button
+        id="workspace-save"
+        type="button"
+        title="Save current workspace metadata as JSON"
+      >
+        Save Workspace
+      </button>
+      <button id="workspace-load" type="button" title="Import workspace JSON">
+        Load Workspace
+      </button>
+      <button id="project-export" type="button" title="Export Atlas, JSON, Workspace and optional Mask">Export Project</button>
+      <input
+        type="file"
+        id="workspace-load-file"
+        accept=".json,.atlasmap.json"
+        style="display: none"
+      />
+      <button id="workspace-add" type="button" title="New workspace">+</button>
+    </div>
+
     <div id="sidebar">
       <div id="sidebar-header">
         <button class="tab-btn active" data-tab="sprites">Sprites</button>
@@ -22,21 +44,50 @@
               Atlas</label
             >
             <label class="btn-icon" title="Load Mask"
-              ><input type="file" id="maskFile" accept="image/*" />🎭
+              ><input type="file" id="maskFile" accept="image/*" multiple />🎭
               Mask</label
             >
             <label class="btn-icon" title="Load JSON"
-              ><input type="file" id="jsonFile" accept=".json" />📄 JSON</label
+              ><input type="file" id="jsonFile" accept=".json" multiple />📄
+              JSON</label
             >
+            <label
+              class="btn-icon"
+              title="Import old JSON and auto-fix 1px border"
+            >
+              <input type="file" id="jsonFixFile" accept=".json" multiple />
+              🛠 Fix JSON
+            </label>
+            <button
+              class="btn-icon"
+              id="btn-import-wizard"
+              title="Import Wizard"
+            >
+              ✨ Import
+            </button>
+            <button class="btn-icon" id="btn-batch-rename" title="Batch Rename">
+              ✏️ Rename
+            </button>
           </div>
           <div
             class="toolbar-options"
             style="padding: 0 5px 10px 5px; font-size: 0.8rem; color: #888"
           >
             <label
-              ><input type="checkbox" id="chk-include-border" /> Include Mask
-              Border</label
+              ><input type="checkbox" id="chk-include-border" checked /> Include
+              Mask Border</label
             >
+            <label style="margin-left: 10px"
+              ><input type="checkbox" id="chk-append-imports" checked /> Append
+              imports</label
+            >
+            <label
+              style="margin-left: 10px"
+              title="If a sprite with same x,y,w,h already exists, fill missing name/group instead of adding a duplicate"
+            >
+              <input type="checkbox" id="chk-reconcile-duplicates" checked />
+              Reconcile duplicates
+            </label>
           </div>
           <input
             type="text"
@@ -62,12 +113,168 @@
       <div id="canvas-toolbar">
         <button id="zoomIn" title="Zoom In">+</button>
         <button id="zoomOut" title="Zoom Out">−</button>
+        <button
+          id="toggle-bg"
+          title="Background: Dark (click to switch to Light)"
+        >
+          BG
+        </button>
+        <button id="toggle-numbers" title="Show sprite numbers">#</button>
         <span id="status-bar"></span>
       </div>
       <div id="wrap">
+        <div id="empty-canvas-msg">
+          <div class="msg-content">
+            <h2>No Atlas Loaded</h2>
+            <p>Drag & Drop an image here to start</p>
+          </div>
+        </div>
         <canvas id="atlas"></canvas>
       </div>
     </div>
+
+    <!-- Loading Overlay -->
+    <dialog id="modal-export">
+      <div class="modal-content export-modal">
+        <h3>Export Project</h3>
+        <p>Download the complete project as a ZIP, or export a mask separately.</p>
+        <label for="export-mask-source">Mask in project</label>
+        <select id="export-mask-source">
+          <option value="none">No mask</option>
+          <option value="original">Original Mask PNG</option>
+          <option value="generated">Generate Mask PNG</option>
+        </select>
+        <label for="export-palette">Generated mask palette</label>
+        <select id="export-palette"><option value="8">8 colors</option><option value="16">16 colors</option></select>
+        <div class="export-preview"><canvas id="export-mask-preview" aria-label="Generated mask preview"></canvas></div>
+        <p id="export-message" role="status"></p>
+        <div class="modal-actions">
+          <button id="export-close" type="button">Close</button>
+          <button id="export-preview-btn" type="button">Preview Mask</button>
+          <button id="export-mask-only" type="button">Download Mask PNG</button>
+          <button id="export-json-only" type="button">Export JSON</button>
+          <button id="export-all" type="button" class="primary">Export All ZIP</button>
+        </div>
+      </div>
+    </dialog>
+    <div id="loading-overlay" class="hidden">
+      <div class="spinner"></div>
+      <div class="loading-text">Processing...</div>
+    </div>
+
+    <!-- Batch Rename Modal -->
+    <dialog id="modal-rename">
+      <div class="modal-content">
+        <h3>Batch Rename</h3>
+        <p>Rename selected sprites (or all if none selected).</p>
+
+        <label>Set Group (Optional)</label>
+        <select id="ren-target-group">
+          <option value="">(Keep Current Group)</option>
+        </select>
+
+        <label>Preset</label>
+        <select id="ren-preset">
+          <option value="custom">Custom Pattern</option>
+          <option value="{group}_{index}">Group_Index (e.g. player_0)</option>
+          <option value="{name}_{index}">Name_Index (e.g. idle_0)</option>
+          <option value="spr_{x}_{y}">Coordinates (e.g. spr_10_20)</option>
+        </select>
+
+        <label>Pattern</label>
+        <div class="pattern-builder">
+          <input type="text" id="ren-pattern" placeholder="{group}_{index}" />
+          <div class="token-buttons">
+            <button data-token="{group}" title="Insert Group Name">
+              Group
+            </button>
+            <button data-token="{index}" title="Insert Index">Index</button>
+            <button data-token="{name}" title="Insert Current Name">
+              Name
+            </button>
+            <button data-token="{x}" title="Insert X Coordinate">X</button>
+            <button data-token="{y}" title="Insert Y Coordinate">Y</button>
+          </div>
+        </div>
+
+        <label>Find / Replace</label>
+        <div class="row">
+          <input type="text" id="ren-find" placeholder="Find..." />
+          <input type="text" id="ren-replace" placeholder="Replace..." />
+        </div>
+
+        <div class="modal-actions">
+          <button id="btn-ren-cancel">Cancel</button>
+          <button id="btn-ren-apply" class="primary">Apply</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Import Wizard Modal -->
+    <dialog id="modal-import">
+      <div class="modal-content">
+        <h3>Import Wizard</h3>
+        <p>
+          Import Atlas + multiple JSONs + multiple Masks in the right order.
+        </p>
+
+        <div class="imp-grid">
+          <label>Atlas (optional)</label>
+          <input type="file" id="imp-atlas" accept="image/*" />
+
+          <label>JSONs</label>
+          <input type="file" id="imp-jsons" accept=".json" multiple />
+
+          <label>Masks</label>
+          <input type="file" id="imp-masks" accept="image/*" multiple />
+        </div>
+
+        <div class="imp-options">
+          <label class="checkbox">
+            <input type="checkbox" id="imp-append" checked /> Append imports
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="imp-include-border" checked /> Include
+            Mask Border
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="imp-seed-from-json" checked /> Seed
+            numbering from JSON
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="imp-reconcile" checked /> Reconcile
+            duplicates (match by coords)
+          </label>
+        </div>
+
+        <div class="imp-options">
+          <label>Name Prefix</label>
+          <input type="text" id="imp-name-prefix" placeholder="e.g. spr_" />
+
+          <label>Pad</label>
+          <input type="number" id="imp-pad" min="1" value="4" />
+
+          <label>Start Index</label>
+          <input
+            type="number"
+            id="imp-start-index"
+            min="1"
+            placeholder="(auto)"
+          />
+        </div>
+
+        <div id="imp-summary" class="imp-summary"></div>
+
+        <div class="modal-actions">
+          <button id="btn-imp-reset" type="button">Reset</button>
+          <button id="btn-imp-cancel" type="button">Cancel</button>
+          <button id="btn-imp-preview" type="button">Preview</button>
+          <button id="btn-imp-apply" type="button" class="primary">
+            Import
+          </button>
+        </div>
+      </div>
+    </dialog>
 
     <script type="module" src="js/App.js"></script>
   </body>

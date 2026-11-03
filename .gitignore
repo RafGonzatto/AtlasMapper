@@ -1,0 +1,16 @@
+# Dependencies and local tool output
+node_modules/
+coverage/
+dist/
+.cache/
+
+# Editor and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local logs and temporary files
+*.log
+*.tmp

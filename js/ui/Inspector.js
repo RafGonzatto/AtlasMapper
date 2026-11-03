@@ -4,10 +4,16 @@ export class Inspector {
     this.state = state;
     this.inputs = {};
 
+    this.unsub = null;
+    this.boundUpdate = null;
+    this.boundDup = null;
+    this.boundDel = null;
+    this.boundKeyDown = {};
+
     this.render();
     this.bindEvents();
 
-    this.state.subscribe((event, data) => {
+    this.unsub = this.state.subscribe((event) => {
       if (event === "selectionChanged" || event === "rectUpdated") {
         this.updateValues();
       }
@@ -57,16 +63,14 @@ export class Inspector {
   }
 
   bindEvents() {
-    const update = () => {
+    this.boundUpdate = () => {
       const indices = Array.from(this.state.selectedIndices);
       if (indices.length === 0) return;
 
       // If multiple selected, only update group
       if (indices.length > 1) {
         const group = this.inputs.group.value;
-        indices.forEach((idx) => {
-          this.state.updateRect(idx, { group });
-        });
+        this.state.moveRectsToGroup(indices, group || "default");
         return;
       }
 
@@ -83,13 +87,14 @@ export class Inspector {
     };
 
     ["name", "group", "x", "y", "w", "h"].forEach((key) => {
-      this.inputs[key].addEventListener("change", update);
-      this.inputs[key].addEventListener("keydown", (e) => {
-        if (e.key === "Enter") update();
-      });
+      this.inputs[key].addEventListener("change", this.boundUpdate);
+      this.boundKeyDown[key] = (e) => {
+        if (e.key === "Enter") this.boundUpdate();
+      };
+      this.inputs[key].addEventListener("keydown", this.boundKeyDown[key]);
     });
 
-    this.inputs.dup.addEventListener("click", () => {
+    this.boundDup = () => {
       // Only duplicate single selection for now to keep it simple
       const rect = this.state.currentRect;
       if (rect) {
@@ -103,11 +108,29 @@ export class Inspector {
         this.state.setRects(newRects);
         this.state.select(newRects.length - 1);
       }
-    });
+    };
 
-    this.inputs.del.addEventListener("click", () => {
-      this.state.deleteSelected();
-    });
+    this.boundDel = () => this.state.deleteSelected();
+
+    this.inputs.dup.addEventListener("click", this.boundDup);
+    this.inputs.del.addEventListener("click", this.boundDel);
+  }
+
+  dispose() {
+    if (this.unsub) this.unsub();
+
+    if (this.boundUpdate) {
+      ["name", "group", "x", "y", "w", "h"].forEach((key) => {
+        const el = this.inputs?.[key];
+        if (el) el.removeEventListener("change", this.boundUpdate);
+        if (el && this.boundKeyDown?.[key])
+          el.removeEventListener("keydown", this.boundKeyDown[key]);
+      });
+    }
+    if (this.boundDup && this.inputs?.dup)
+      this.inputs.dup.removeEventListener("click", this.boundDup);
+    if (this.boundDel && this.inputs?.del)
+      this.inputs.del.removeEventListener("click", this.boundDel);
   }
 
   updateValues() {
@@ -140,9 +163,8 @@ export class Inspector {
       Object.values(this.inputs).forEach((el) => (el.disabled = false));
     } else {
       // Multiple selection
-      this.container.querySelector(
-        ".inspector-header"
-      ).textContent = `${count} items selected`;
+      this.container.querySelector(".inspector-header").textContent =
+        `${count} items selected`;
       this.clearInputs();
       this.inputs.group.value = ""; // Or maybe 'Mixed'?
       this.inputs.group.placeholder = "Set group for all...";

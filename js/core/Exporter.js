@@ -31,6 +31,7 @@ export const Exporters = {
         spriteSourceSize: { x: 0, y: 0, w: r.w, h: r.h },
         sourceSize: { w: r.w, h: r.h },
         pivot: config.pivot || { x: 0.5, y: 0.5 },
+        group: r.group || "default",
       }));
       return {
         textures: [
