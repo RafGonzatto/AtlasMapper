@@ -145,6 +145,13 @@ body {
 }
 #export-mask-preview { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
 #export-message { min-height: 1.4em; color: #b9ddff; }
+.export-overlap { border: 1px solid #bd8342; padding: 10px; margin: 10px 0; }
+.export-overlap[hidden] { display: none; }
+.export-overlap p { margin: 8px 0; }
+.export-overlap-actions, .export-coordinates { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.export-coordinates label { margin: 0; }
+.export-coordinates input { display: block; width: 65px; }
+.export-allow-overlap { display: flex !important; gap: 8px; align-items: start; }
 .export-modal .modal-actions { flex-wrap: wrap; }
 
 .ws-persist {

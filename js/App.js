@@ -7,6 +7,7 @@ import { SettingsPanel } from "./ui/SettingsPanel.js";
 import { ImportWizard } from "./ui/ImportWizard.js";
 import { IO } from "./utils/IO.js";
 import { generateMask } from "./core/MaskGenerator.js";
+import { findFrameOverlap, findFreePosition } from "./core/FrameOverlap.js";
 import { createZip } from "./utils/Zip.js";
 import { Exporters } from "./core/Exporter.js";
 
@@ -111,16 +112,34 @@ class App {
     const palette = document.getElementById("export-palette");
     const preview = document.getElementById("export-mask-preview");
     const message = document.getElementById("export-message");
-    const report = error => { message.textContent = error?.message || String(error); };
+    const overlapPanel = document.getElementById("export-overlap");
+    const allowOverlap = document.getElementById("export-allow-overlap");
+    const frameName = i => this.state.rects[i]?.name || `Frame ${i + 1}`;
+    const currentPair = () => findFrameOverlap(this.state?.rects || []);
+    const refreshOverlap = () => {
+      const pair = currentPair();
+      overlapPanel.hidden = !pair;
+      if (!pair) { allowOverlap.checked = false; return; }
+      const [first, second] = pair;
+      const a = this.state.rects[first], b = this.state.rects[second];
+      document.getElementById("export-overlap-details").textContent =
+        `${frameName(first)} (#${first + 1}: ${a.x}, ${a.y}, ${a.w} × ${a.h}) overlaps ${frameName(second)} (#${second + 1}: ${b.x}, ${b.y}, ${b.w} × ${b.h}).`;
+      document.getElementById("export-keep-first").textContent = `Keep ${frameName(first)}; remove ${frameName(second)}`;
+      document.getElementById("export-keep-second").textContent = `Keep ${frameName(second)}; remove ${frameName(first)}`;
+      for (const key of ["x", "y", "w", "h"])
+        document.getElementById(`export-frame-${key}`).value = b[key];
+    };
+    const report = error => { message.textContent = error?.message || String(error); refreshOverlap(); };
     const renderMask = () => {
       const state = this.state;
       if (!state?.atlasImage) throw new Error("Load an Atlas PNG first.");
       const result = generateMask(state.atlasImage.width, state.atlasImage.height,
-        state.rects, Number(palette.value));
+        state.rects, Number(palette.value), { allowOverlap: allowOverlap.checked });
       preview.width = result.width;
       preview.height = result.height;
       preview.getContext("2d").putImageData(new ImageData(result.data, result.width, result.height), 0, 0);
-      message.textContent = `Generated ${state.rects.length} internal outlines (${result.width} × ${result.height}).`;
+      message.textContent = `Generated ${state.rects.length} internal outlines (${result.width} × ${result.height}).` +
+        (currentPair() ? " Shared pixels use the later frame; the mask may lose frame boundaries." : "");
       return preview;
     };
     const imageBlob = async image => {
@@ -135,11 +154,51 @@ class App {
       source.value = this.state?.maskImage ? "original" : "none";
       preview.width = preview.height = 0;
       message.textContent = "";
+      allowOverlap.checked = false;
+      refreshOverlap();
       dialog.showModal();
     });
     document.getElementById("export-close").addEventListener("click", () => dialog.close());
-    source.addEventListener("change", () => { preview.width = preview.height = 0; message.textContent = ""; });
+    source.addEventListener("change", () => { preview.width = preview.height = 0; message.textContent = ""; refreshOverlap(); });
     palette.addEventListener("change", () => { preview.width = preview.height = 0; message.textContent = ""; });
+    allowOverlap.addEventListener("change", () => { preview.width = preview.height = 0; message.textContent = ""; });
+    const afterResolution = () => {
+      preview.width = preview.height = 0;
+      message.textContent = "Frame conflict updated. Check the next overlap, if any.";
+      refreshOverlap();
+    };
+    const removeFromPair = which => {
+      const pair = currentPair();
+      if (!pair) return;
+      this.state.select(pair[which]);
+      this.state.deleteSelected();
+      afterResolution();
+    };
+    document.getElementById("export-keep-first").addEventListener("click", () => removeFromPair(1));
+    document.getElementById("export-keep-second").addEventListener("click", () => removeFromPair(0));
+    document.getElementById("export-move-second").addEventListener("click", () => {
+      const pair = currentPair();
+      if (!pair) return;
+      const state = this.state;
+      const position = findFreePosition(state.rects, pair[1], state.atlasImage.width, state.atlasImage.height);
+      if (!position) { message.textContent = "No free space fits this frame. Edit its coordinates or choose another option."; return; }
+      state.updateRect(pair[1], position);
+      afterResolution();
+    });
+    document.getElementById("export-apply-frame").addEventListener("click", () => {
+      const pair = currentPair();
+      if (!pair) return;
+      const values = Object.fromEntries(["x", "y", "w", "h"].map(key =>
+        [key, Number(document.getElementById(`export-frame-${key}`).value)]));
+      const atlas = this.state.atlasImage;
+      if (Object.values(values).some(v => !Number.isInteger(v)) || values.x < 0 || values.y < 0 ||
+          values.w < 1 || values.h < 1 || values.x + values.w > atlas.width || values.y + values.h > atlas.height) {
+        message.textContent = "Enter whole-number coordinates within the atlas.";
+        return;
+      }
+      this.state.updateRect(pair[1], values);
+      afterResolution();
+    });
     document.getElementById("export-preview-btn").addEventListener("click", () => {
       try { renderMask(); } catch (error) { report(error); }
     });

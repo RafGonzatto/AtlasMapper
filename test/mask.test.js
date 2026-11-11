@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateMask } from "../js/core/MaskGenerator.js";
 import { RectDetector } from "../js/core/RectDetector.js";
+import { findFrameOverlap, findFreePosition } from "../js/core/FrameOverlap.js";
 
 const frame = (x, y, w, h, name = "sprite") => ({ x, y, w, h, name });
 const pixel = (mask, x, y) => [...mask.data.slice((y * mask.width + x) * 4, (y * mask.width + x) * 4 + 4)];
@@ -41,4 +42,22 @@ test("rotated and trimmed metadata use packed atlas coordinates", () => {
   assert.equal(pixel(m,3,4)[3],255);
   assert.equal(pixel(m,4,8)[3],255);
   assert.equal(pixel(m,2,4)[3],0);
+});
+
+test("overlap resolution identifies frames and offers a free position", () => {
+  const frames = [frame(0, 0, 4, 4), frame(2, 2, 4, 4)];
+  assert.deepEqual(findFrameOverlap(frames), [0, 1]);
+  const position = findFreePosition(frames, 1, 10, 10);
+  assert.deepEqual(position, { x: 4, y: 0 });
+  assert.equal(findFrameOverlap([frames[0], { ...frames[1], ...position }]), null);
+  assert.equal(findFreePosition(frames, 1, 4, 4), null);
+});
+
+test("explicit overlap export uses the later frame on shared outline pixels", () => {
+  const first = frame(0, 0, 4, 4);
+  const second = frame(2, 0, 4, 4);
+  assert.throws(() => generateMask(6, 4, [first, second]), /Overlapping/);
+  const mask = generateMask(6, 4, [first, second], 8, { allowOverlap: true });
+  assert.deepEqual(pixel(mask, 2, 0), [0, 255, 0, 255]);
+  assert.deepEqual(pixel(mask, 0, 0), [255, 0, 0, 255]);
 });

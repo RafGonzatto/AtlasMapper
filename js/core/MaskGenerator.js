@@ -1,8 +1,10 @@
+import { findFrameOverlap } from "./FrameOverlap.js";
+
 // The mask reader (RectDetector) groups opaque pixels by exact RGB and
 // four-neighbor connectivity, then uses their bounding boxes as sprite frames.
 // Consequently the atlas-space JSON frames, including rotated/trimmed frames,
 // are the authoritative bounds. Rotation affects unpacking, not atlas pixels.
-export function generateMask(width, height, frames, paletteSize = 8) {
+export function generateMask(width, height, frames, paletteSize = 8, { allowOverlap = false } = {}) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1)
     throw new Error("Load an Atlas PNG first.");
   if (![8, 16].includes(Number(paletteSize))) throw new Error("Choose an 8 or 16 color palette.");
@@ -13,17 +15,14 @@ export function generateMask(width, height, frames, paletteSize = 8) {
       throw new Error(`Invalid or out-of-bounds frame: ${r.name || i + 1}.`);
     return { x, y, w, h, i };
   });
-  // Reject ambiguous metadata. A sweep avoids checking all pairs on large atlases.
-  const sorted = [...rects].sort((a, b) => a.x - b.x || a.y - b.y || a.i - b.i);
-  let active = [];
-  for (const r of sorted) {
-    active = active.filter(a => a.x + a.w > r.x);
-    if (active.some(a => a.y < r.y + r.h && r.y < a.y + a.h))
-      throw new Error("Overlapping JSON frames cannot produce an unambiguous mask.");
-    active.push(r);
-  }
+  if (!allowOverlap && findFrameOverlap(rects))
+    throw new Error("Overlapping JSON frames cannot produce an unambiguous mask.");
   const owner = new Int32Array(width * height); // 0 is transparent
   for (const r of rects) {
+    // Explicit override gives the later frame its whole area, including its
+    // transparent interior, so earlier outlines cannot remain inside it.
+    if (allowOverlap) for (let y = r.y; y < r.y + r.h; y++)
+      owner.fill(0, y * width + r.x, y * width + r.x + r.w);
     const paint = (x, y) => { owner[y * width + x] = r.i + 1; };
     for (let x = r.x; x < r.x + r.w; x++) {
       paint(x, r.y);

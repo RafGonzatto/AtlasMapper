@@ -148,6 +148,24 @@
         <select id="export-palette"><option value="8">8 colors</option><option value="16">16 colors</option></select>
         <div class="export-preview"><canvas id="export-mask-preview" aria-label="Generated mask preview"></canvas></div>
         <p id="export-message" role="status"></p>
+        <section id="export-overlap" class="export-overlap" hidden>
+          <strong>Overlapping frames</strong>
+          <p id="export-overlap-details"></p>
+          <div class="export-overlap-actions">
+            <button id="export-keep-first" type="button"></button>
+            <button id="export-keep-second" type="button"></button>
+            <button id="export-move-second" type="button">Move second to free space</button>
+          </div>
+          <p>Edit the second frame coordinates (X, Y, W, H):</p>
+          <div class="export-coordinates">
+            <label>X <input id="export-frame-x" type="number" min="0"></label>
+            <label>Y <input id="export-frame-y" type="number" min="0"></label>
+            <label>W <input id="export-frame-w" type="number" min="1"></label>
+            <label>H <input id="export-frame-h" type="number" min="1"></label>
+            <button id="export-apply-frame" type="button">Apply coordinates</button>
+          </div>
+          <label class="export-allow-overlap"><input id="export-allow-overlap" type="checkbox"> Export anyway (later frames take priority in shared pixels; generated mask may not recreate every frame)</label>
+        </section>
         <div class="modal-actions">
           <button id="export-close" type="button">Close</button>
           <button id="export-preview-btn" type="button">Preview Mask</button>
