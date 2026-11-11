@@ -1,5 +1,6 @@
 import { IO } from "../utils/IO.js";
 import { RectDetector } from "../core/RectDetector.js";
+import { inspectMask, fitMaskToAtlas } from "../core/MaskNormalizer.js";
 import { ProjectState } from "../core/ProjectState.js";
 
 export class ImportWizard {
@@ -371,21 +372,32 @@ export class ImportWizard {
       const file = this.selected.masks[i];
       try {
         const img = await IO.loadImage(file);
-        if (
-          atlasW &&
-          atlasH &&
-          (img.width !== atlasW || img.height !== atlasH)
-        ) {
-          maskInvalidDim++;
-          continue;
-        }
-
         const off = document.createElement("canvas");
         off.width = img.width;
         off.height = img.height;
         const ctx = off.getContext("2d");
         ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, img.width, img.height);
+        let imageData = ctx.getImageData(0, 0, img.width, img.height);
+
+        if (atlasW && atlasH && (img.width !== atlasW || img.height !== atlasH)) {
+          try {
+            imageData = fitMaskToAtlas(imageData, atlasW, atlasH);
+            warnings.push(
+              `Mask '${file.name}': dimensions ${img.width}×${img.height} differ from atlas ${atlasW}×${atlasH}. You'll be asked before adjusting its canvas on import.`
+            );
+          } catch (error) {
+            maskInvalidDim++;
+            warnings.push(`Mask '${file.name}': ${error.message}`);
+            continue;
+          }
+        }
+
+        const report = inspectMask(imageData);
+        if (report.needsNormalization) {
+          warnings.push(
+            `Mask '${file.name}' has ${report.reasons.join(" and ")}. On import, you can normalize or keep it unchanged. Preview uses original pixels.`
+          );
+        }
 
         const rects = detector.detect(imageData, {
           includeBorder: options.includeBorder,
