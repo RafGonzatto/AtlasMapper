@@ -1,5 +1,6 @@
 import { IO } from "../utils/IO.js";
 import { RectDetector } from "../core/RectDetector.js";
+import { inspectMask, normalizeMask, fitMaskToAtlas } from "../core/MaskNormalizer.js";
 
 export class Toolbar {
   constructor(elements, state) {
@@ -270,25 +271,60 @@ export class Toolbar {
           `Processing mask ${i + 1}/${files.length}: ${file.name}`,
         );
         const img = await IO.loadImage(file);
-        if (
-          img.width !== this.state.atlasImage.width ||
-          img.height !== this.state.atlasImage.height
-        ) {
-          alert(`Mask '${file.name}' dimensions must match Atlas dimensions.`);
-          continue;
-        }
-
         const off = document.createElement("canvas");
         off.width = img.width;
         off.height = img.height;
         const ctx = off.getContext("2d");
         ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, img.width, img.height);
+        const originalPixels = ctx.getImageData(0, 0, img.width, img.height);
+        let imageData = originalPixels;
+
+        const atlasWidth = this.state.atlasImage.width;
+        const atlasHeight = this.state.atlasImage.height;
+        if (img.width !== atlasWidth || img.height !== atlasHeight) {
+          try {
+            const fitted = fitMaskToAtlas(imageData, atlasWidth, atlasHeight);
+            const adjust = confirm(
+              `Mask '${file.name}' is ${img.width}×${img.height}; atlas is ${atlasWidth}×${atlasHeight}.\n\n` +
+              "Adjust the transparent canvas to match without scaling or moving pixels?\n\n" +
+              "OK = adjust and import | Cancel = skip this mask."
+            );
+            if (!adjust) { skipped++; continue; }
+            imageData = fitted;
+          } catch (error) {
+            alert(`Mask '${file.name}' cannot match the atlas: ${error.message}`);
+            skipped++;
+            continue;
+          }
+        }
+
+        const report = inspectMask(imageData);
+        if (report.needsNormalization) {
+          const shouldNormalize = confirm(
+            `Mask '${file.name}' contains ${report.reasons.join(" and ")}.\n` +
+            `${report.partialAlphaPixels} partially transparent pixels; ${report.distinctColors} RGB colors.\n\n` +
+            "Normalize colors and alpha before detecting rectangles?\n\n" +
+            "OK = normalize | Cancel = import original pixels."
+          );
+          if (shouldNormalize) imageData = normalizeMask(imageData);
+        }
+
+        let maskImage = img;
+        if (imageData !== originalPixels) {
+          const resultCanvas = document.createElement("canvas");
+          resultCanvas.width = imageData.width;
+          resultCanvas.height = imageData.height;
+          const resultCtx = resultCanvas.getContext("2d");
+          const pixels = resultCtx.createImageData(imageData.width, imageData.height);
+          pixels.data.set(imageData.data);
+          resultCtx.putImageData(pixels, 0, 0);
+          maskImage = resultCanvas;
+        }
 
         const rects = this.detector.detect(imageData, { includeBorder });
         if (!effectiveAppend || (this.state.rects || []).length === 0) {
           // Replace-mode (or first import)
-          this.state.setMask(img, rects);
+          this.state.setMask(maskImage, rects);
           replaced = true;
         } else {
           const res = this.state.appendRects(rects, {
@@ -299,7 +335,7 @@ export class Toolbar {
           });
           added += res.added;
           skipped += res.skipped;
-          this.state.maskImage = img;
+          this.state.maskImage = maskImage;
         }
 
         // Let the UI breathe between large imports
